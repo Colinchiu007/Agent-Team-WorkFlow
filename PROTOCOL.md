@@ -921,3 +921,83 @@ python ../../team/scripts/agent-feature.py "导出 CSV" --description "导出支
 **注意**：
 - 真实场景中，"写代码" 这一步需要你实际的 coding skill（不是示例代码）
 - 当前示例代码只是展示文件结构，你可以替换成你的真实实现
+
+---
+
+## 11. 第十一章：Bug 修复极简入口
+
+### 11.1 auto-bug-fix.py 脚本
+
+**核心脚本**：`team/scripts/auto-bug-fix.py`
+
+**用法**（在项目根目录运行）：
+
+```bash
+# 最简单的调用（只用标题）
+python ../team/scripts/auto-bug-fix.py "console.log 残留"
+
+# 指定 description（可选）
+python ../team/scripts/auto-bug-fix.py "console.log 残留" \
+  --description "修复 login.js 中残留的 console.log"
+
+# 指定 scope（可选，不传会自动从标题提取）
+python ../team/scripts/auto-bug-fix.py "console.log 残留" \
+  --scope auth
+
+# 模拟运行（不实际创建 Issue/PR）
+python ../team/scripts/auto-bug-fix.py "console.log 残留" --simulate
+```
+
+**工作原理**：
+- `auto-bug-fix.py` 是 `agent-feature.py` 的**轻量包装**
+- 自动生成 `feature_key`：标题 → kebab-case，加 `fix-` 前缀
+- 自动生成 `scope`：从英文标题提取
+- 自动从 cwd 推断工作目录
+- 复用 `agent-feature.py` 的完整流程（Issue / Branch / Code / Commit / PR / CI 门禁）
+
+**和 `agent-feature.py` 的关系**：
+
+| 维度 | agent-feature.py | auto-bug-fix.py |
+|------|------------------|-----------------|
+| **适用场景** | 新功能 | Bug 修复 |
+| **feature_key 前缀** | 自由命名 | 自动加 `fix-` |
+| **分支命名** | `feat/<key>/v1` | `feat/fix-<key>/v1`（会被脚本自动调整） |
+| **Commit message** | `feat(scope): ...` | `fix(scope): ...`（取决于 scope 来源） |
+| **Issue 标签** | `feature` | `feature`（待未来扩展为 `bug`） |
+| **完整流程** | ✅ | ✅（完全相同） |
+| **复杂度** | 中（多参数） | 极简（一句话） |
+
+**示例运行输出**（模拟模式 `--simulate`）：
+```
+======================================================================
+🐛 Auto Bug Fix — Bug 修复极简入口
+======================================================================
+原始标题:  console.log 残留
+feature_key: fix-console-log-残留
+scope:       consolelog
+description: console.log 残留 / 自动记录于 C:\Users\邱领\Projects\team\scripts\auto-bug-fix.py
+
+🚀 调用 agent-feature.py ...
+  $ python agent-feature.py fix-console-log-残留 --description console.log 残留 --scope consolelog
+
+[agent-feature.py 内部输出]
+======================================================================
+🤖 Agent Feature Workflow — 极强自动化工单脚本
+======================================================================
+功能关键帧: fix-console-log-残留
+功能描述: console.log 残留 自动记录于 ...
+工作目录: C:\Users\邱领\Projects\prompt-engine
+  $ git branch --show-current
+... (完整流程运行)
+```
+
+### 11.2 选择建议
+
+| 场景 | 推荐脚本 |
+|------|----------|
+| 加新功能 | `agent-feature.py` |
+| 修 Bug | `auto-bug-fix.py` |
+| 重构（不增功能） | `agent-feature.py` + 手动 scope |
+| 配置/工具变更 | `agent-feature.py` + scope=chore |
+| 文档更新 | `agent-feature.py` + scope=docs |
+
