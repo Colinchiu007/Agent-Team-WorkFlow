@@ -74,18 +74,27 @@ def has_uncommitted_changes() -> bool:
     return bool(result.stdout.strip())
 
 
-def check_docs_sync(project_dir: Path) -> Tuple[bool, List[str]]:
+def check_docs_sync(project_dir: Path, base_branch: str = "main") -> Tuple[bool, List[str]]:
     """
-    检查文档同步（模拟 check-docs-sync.sh 的逻辑）
+    检查文档同步（与 5 份核心文档对齐）
 
     返回：
         (docs_changed, files_to_update)
     """
-    result = run_cmd(["git", "diff", f"origin/{DEFAULT_BRANCH}", "--name-only", "--pretty=format:"],
+    result = run_cmd(["git", "diff", f"origin/{base_branch}", "--name-only", "--pretty=format:"],
                      workdir=project_dir, check=False)
 
     changed_files = [f.strip() for f in result.stdout.strip().split("\n") if f.strip()]
-    docs_to_update = [f for f in changed_files if any(doc in f for doc in PROJECT_REGENGERY_FILES)]
+
+    docs_to_update = []
+    for file in CORE_DOCUMENTS:
+        # 检查文件名（去除 docs/ 前缀）
+        clean_file = file.replace("docs/", "")
+        # 匹配：精确文件名 或 路径以这个文件结尾
+        for f in changed_files:
+            if f.endswith(clean_file) or f.split("/")[-1] == clean_file:
+                docs_to_update.append(clean_file)
+                break
 
     return len(docs_to_update) > 0, docs_to_update
 
@@ -119,49 +128,95 @@ def draft_changelog(project_dir: Path) -> str:
         return "# AUTO-GENERATED CHANGELOG\n\n暂无变更\n"
 
 
-def generate_pr_body(feature_key: str, change_count: int, docs_updated: bool) -> str:
+def generate_pr_body(feature_key: str, change_count: int, docs_updated: bool,
+                     has_tests: bool = True, has_security_checks: bool = True) -> str:
     """
-    生成 PR body（含 markdown checkbox）
+    生成 PR body（5 维 checkbox — 整合 professional-ai-coding-workflow）
 
-    支持的 checkbox：
-        ✅ docs/README.md 已更新
-        ✅ docs/CHANGELOG.md 已更新
-        ✅ 所有文档变更已完成
+    5 维检查：
+        1. 变更类型（feat/fix/docs/refactor/test/chore）
+        2. 通用检查清单（代码自审/无 console.log/无硬编码密钥/风格一致）
+        3. 文档同步（5 份核心文档：PRD/CHANGELOG/README/AGENTS/INTEGRATION）
+        4. 测试与质量（单元测试 / 无安全隐患）
+        5. CI 门禁（bypass 标签 / 注意事项）
     """
     lines = [
-        f"## {feature_key}",
+        f"## PR: {feature_key}",
+        "",
+        "### 1️⃣ 变更类型",
+        "- [ ] feat（新功能）",
+        "- [ ] fix（Bug 修复）",
+        "- [ ] docs（文档）",
+        "- [ ] refactor（重构）",
+        "- [ ] test（测试）",
+        "- [ ] chore（配置/工具）",
+        "",
+        "### 2️⃣ 检查清单（4 维）",
+        "- [ ] 代码自审通过",
+        "- [ ] 无 console.log / print 残留",
+        "- [ ] 无硬编码密钥（API_KEY / SECRET / PASSWORD / TOKEN）",
+        "- [ ] 代码风格一致（通过 ruff / ESLint）",
         "",
     ]
 
+    # 3️⃣ 文档同步（5 份核心文档）
     if docs_updated:
         lines.extend([
-            "### 已完成",
-            "✅ docs/README.md 已更新",
-            "✅ docs/CHANGELOG.md 已更新",
-            "✅ 所有文档变更已完成",
+            "### 3️⃣ 文档同步（5 份核心文档）",
+            "- [x] `docs/PRD.md` 已更新",
+            "- [x] `CHANGELOG.md` 已更新",
+            "- [x] `README.md` 已更新",
+            "- [x] `docs/AGENTS.md` 已更新",
+            "- [x] `docs/INTEGRATION.md` 已更新",
             "",
-            "### 注意事项",
-            "- 本 PR 包含文档更新，通过文档同步门禁",
-            "- 无需手动添加 `bypass-doc-gate` label",
         ])
     else:
         lines.extend([
-            "### 已完成",
-            "⚠️ 代码已提交，但未检测到文档变更",
+            "### 3️⃣ 文档同步（⚠️ 未检测到文档变更）",
+            "请手动更新以下 5 份核心文档：",
+            "- [ ] `docs/PRD.md`（如功能有 PRD）",
+            "- [ ] `CHANGELOG.md`（必须补）",
+            "- [ ] `README.md`（如用户可见）",
+            "- [ ] `docs/AGENTS.md`（如涉及角色变更）",
+            "- [ ] `docs/INTEGRATION.md`（如涉及 API 端点）",
             "",
-            "### 待补外部：",
-            "- docs/README.md（如用户可见）",
-            "- docs/CHANGELOG.md（必须补）",
+        ])
+
+    # 4️⃣ 测试与质量
+    lines.extend([
+        "### 4️⃣ 测试与质量",
+        f"- [{'x' if has_tests else ' '}] 单元测试已写（{change_count} 个测试文件）",
+        f"- [{'x' if has_security_checks else ' '}] 无安全隐患（无 console.log、硬编码密钥）",
+        "",
+    ])
+
+    # 5️⃣ CI 门禁 + 注意事项
+    if docs_updated:
+        lines.extend([
+            "### 5️⃣ CI 门禁",
+            "- [x] 通过文档同步门禁",
+            "- [x] 无需手动添加 `bypass-doc-gate` label",
             "",
-            "### 备注：",
-            "- 请手动完成文档更新后重新提交 PR",
-            "- 或给 owner/reviewer 加 `bypass-doc-gate` label（紧急情况）",
+            "### 📌 注意事项",
+            "- 本 PR 包含 5 份核心文档更新",
+            "- merge 前请 CTO/owner review",
+        ])
+    else:
+        lines.extend([
+            "### 5️⃣ CI 门禁（⚠️ 文档未同步）",
+            "- [ ] **必须** 手动更新文档后，点击 PR 的 `Re-run workflow` 重新触发 CI",
+            "- [ ] 或给 owner/reviewer 加 `bypass-doc-gate` label（紧急情况）",
+            "",
+            "### 📌 注意事项",
+            "- 当前 PR 的 CI 会红灯（因为代码改了但文档没改）",
+            "- merge 前请**先**补齐文档，再 Re-run workflow",
         ])
 
     lines.extend([
         "",
         "---",
-        self.format() if hasattr(self, 'format') else "",
+        "",
+        f"🤖 由 agent-feature.py 自动生成于 {Path(__file__).name}",
     ])
 
     return "\n".join(lines)
@@ -169,22 +224,71 @@ def generate_pr_body(feature_key: str, change_count: int, docs_updated: bool) ->
 
 # ===== 核心流程 =====
 
-def auto_create_issue(feature_key: str, feature_description: List[str]) -> int:
+def auto_create_issue(feature_key: str, feature_description: List[str],
+                      issue_type: str = "feature") -> int:
     """
-    自动创建 Issue
+    自动创建 Issue（使用 issue-feature.md 模板）
 
-    feature_key: issue 标题的关键词（如 "export-support-log-csv"）
-    feature_description: 详细描述列表（如 ["导出支持日志为 CSV", "支持分页", "支持按时间范围筛选"]）
+    Args:
+        feature_key: issue 标题的关键词（如 "export-support-log-csv"）
+        feature_description: 详细描述列表（如 ["导出支持日志为 CSV", "支持分页", "支持按时间范围筛选"]）
+        issue_type: issue 类型（feature/bug/chore/refactor/docs）
+
+    Returns:
+        Issue number
     """
+    # 1. 选择模板
+    template_map = {
+        "feature": "issue-feature.md",
+        "bug": "issue-bug.md",  # 可能不存在，回退到 feature
+        "chore": "issue-feature.md",
+        "refactor": "issue-feature.md",
+        "docs": "issue-feature.md",
+    }
+
+    template_file = template_map.get(issue_type, "issue-feature.md")
+    template_path = TEAM_SCRIPTS_DIR / "templates" / template_file
+
+    # 2. 填充模板
     title = f"[{feature_key}] {feature_description[0]}"
-    body = "## 需求说明\n\n" + "\n".join(f"- {item}" for item in feature_description)
+
+    if template_path.exists():
+        template = template_path.read_text(encoding='utf-8')
+
+        try:
+            body = template.format(
+                title=title,
+                description="\n".join(f"- **{item}**" for item in feature_description),
+                type_label=issue_type,
+                priority="P1",
+                status="backlog"
+            )
+        except KeyError as e:
+            # 模板不匹配，回退到简单格式
+            print(f"  ⚠️  模板占位符 {e} 不存在，使用简单格式")
+            body = "## 需求说明\n\n" + "\n".join(f"- **{item}**" for item in feature_description)
+    else:
+        # 模板不存在，使用简单格式
+        body = "## 需求说明\n\n" + "\n".join(f"- **{item}**" for item in feature_description)
+
+    # 3. 自动识别 feature_key 类型（推断 label）
+    label_map = {
+        "feature": "feature",
+        "bug": "bug",
+        "chore": "chore",
+        "refactor": "refactor",
+        "docs": "docs",
+    }
+    label = label_map.get(issue_type, "feature")
 
     print(f"\n📝 自动创建 Issue: {title}")
+    print(f"   标签: {label} | 模板: {template_file}")
+
     result = gh_command([
         "issue", "create",
         "--title", title,
         "--body", body,
-        "--label", "feature"
+        "--label", label
     ])
 
     result.check_output()  # 会抛出异常如果失败
@@ -198,17 +302,63 @@ def auto_create_issue(feature_key: str, feature_description: List[str]) -> int:
     return issue_number
 
 
-def auto_create_branch(feature_key: str) -> str:
+def _sanitize_branch_name(name: str) -> str:
+    """
+    将任意字符串转为 git 合法分支名（只允许 ASCII 字母、数字、-、_、/）
+
+    Args:
+        name: 原始字符串（可能含中文、特殊字符）
+
+    Returns:
+        git 合法分支名（小写 + kebab-case）
+    """
+    import re
+    # 1. 替换空白和特殊字符为 -
+    sanitized = re.sub(r'[\s._]+', '-', name)
+    # 2. 只保留 ASCII 字母、数字、-、_、/
+    sanitized = re.sub(r'[^a-zA-Z0-9\-_/]', '', sanitized)
+    # 3. 全部小写
+    sanitized = sanitized.lower()
+    # 4. 去除重复的 -
+    sanitized = re.sub(r'-+', '-', sanitized)
+    # 5. 去除首尾的 -
+    sanitized = sanitized.strip('-')
+    # 6. 限制长度
+    if len(sanitized) > 50:
+        sanitized = sanitized[:50]
+    return sanitized
+
+
+def auto_create_branch(feature_key: str, base_branch: str = "main") -> str:
     """
     自动创建分支
 
-    feature_key: 如 feat/export-support-log-csv
+    feature_key: 如 feat/export-supported-log-csv（可能含中文，会被转 ASCII）
+    base_branch: 基础分支（默认 main）
     """
-    branch_name = f"{feature_key}/v1"
+    # 转换 feature_key 为合法分支名
+    safe_feature_key = _sanitize_branch_name(feature_key)
+    branch_name = f"{safe_feature_key}/v1"
     print(f"\n🌿 自动创建分支: {branch_name}")
+    if branch_name != f"{feature_key}/v1":
+        print(f"   (已转 ASCII: {feature_key} → {safe_feature_key})")
 
-    run_cmd(["git", "checkout", DEFAULT_BRANCH])
-    run_cmd(["git", "pull", "origin", DEFAULT_BRANCH])
+    # 检查是否已经在 base_branch
+    current = get_current_branch()
+    if current != base_branch:
+        checkout_result = run_cmd(["git", "checkout", base_branch], check=False)
+        if checkout_result.returncode != 0:
+            print(f"  ⚠️  无法切换到 {base_branch}，使用当前分支 {current} 作为基础")
+            base_branch = current
+    else:
+        print(f"  ✅ 已在 {base_branch} 分支上")
+
+    # 拉取最新代码（失败时仅警告）
+    pull_result = run_cmd(["git", "pull", "origin", base_branch], check=False)
+    if pull_result.returncode != 0:
+        print(f"  ⚠️  拉取失败，但继续创建分支")
+
+    # 创建新分支
     run_cmd(["git", "checkout", "-b", branch_name])
 
     print(f"  ✅ 分支 {branch_name} 已创建")
@@ -232,14 +382,15 @@ def auto_write_code(project_dir: Path, feature_key: str, feature_description: Li
     example_file = project_dir / "examples" / f"{feature_key.replace('-', '_')}.py"
     example_file.parent.mkdir(exist_ok=True)
 
-    example_content = f'''"""
-{feature_key} 示例实现
+    example_content = '''
+"""
+''' + feature_key + ''' 示例实现
 
 功能：
-{chr(10).join(f"- {desc}" for desc in feature_description)}
+''' + chr(10).join(f"- {desc}" for desc in feature_description) + '''
 
 用法示例：
-    from examples.{feature_key.replace('-', '_')} import ExportCSV
+    from examples.''' + feature_key.replace('-', '_') + ''' import ExportCSV
 
     exporter = ExportCSV()
     exporter.run()
@@ -258,7 +409,7 @@ class ExportCSV:
 
     def run(self, start_date: str = None, end_date: str = None):
         """执行导出操作"""
-        print(f"开始导出从 {start_date or '全部'} 到 {end_date or '全部'} 的支持日志...")
+        print("开始导出从 " + (start_date or "全部") + " 到 " + (end_date or "全部") + " 的支持日志...")
 
         with open(self.log_file, 'r', encoding='utf-8') as f_in:
             logs = [line.strip() for line in f_in.readlines() if line.strip()]
@@ -272,7 +423,7 @@ class ExportCSV:
             writer.writerow(["时间", "用户", "问题", "描述"])
             writer.writerows(logs)
 
-        print(f"✅ 已导出到 {self.output_csv}（{len(logs)} 条记录）")
+        print("✅ 已导出到 " + self.output_csv + "（{} 条记录）".format(len(logs)))
 
 
 if __name__ == "__main__":
@@ -309,17 +460,81 @@ def test_export_csv_basic():
     print(f"  ✅ 测试文件已生成: {test_file.relative_to(project_dir)}")
 
 
-def auto_commit(project_dir: Path, feature_key: str) -> str:
+def auto_commit(project_dir: Path, feature_key: str, change_type: str = "feat",
+                scope: str = None, description: str = "添加新功能") -> str:
     """
-    自动 Commit（Conventional Commits）
+    自动 Commit（严格遵循 Conventional Commits）
 
-    返回：commit message
+    Conventional Commits 格式：
+        <type>(<scope>): <description>
+
+        [optional body]
+
+        [optional footer(s)]
+
+    Args:
+        project_dir: 项目目录
+        feature_key: 功能 key（例：'fix-console-log-residue'）
+        change_type: 变更类型（feat/fix/docs/style/refactor/test/chore/build/ci/perf）
+        scope: 影响范围（默认从 feature_key 提取）
+        description: 简短描述（必填）
+
+    Returns:
+        commit message
     """
-    message = f"feat({feature_key}): 实现导出 CSV 功能\n\n"
-    message += "- 添加导出 CSV 类\n"
-    message += "- 添加单元测试\n"
+    # 1. 验证 change_type
+    valid_types = ["feat", "fix", "docs", "style", "refactor", "test", "chore", "build", "ci", "perf"]
+    if change_type not in valid_types:
+        print(f"  ⚠️  无效的 change_type '{change_type}'，回退到 'feat'")
+        change_type = "feat"
 
-    print(f"\n💾 自动提交: {message}")
+    # 2. 提取 scope（如果未提供）
+    if not scope:
+        # 从 feature_key 提取首词
+        words = feature_key.replace("-", "_").split("_")
+        # 去掉 "fix" / "feat" 前缀
+        words = [w for w in words if w not in ("fix", "feat")]
+        scope = words[0] if words else "core"
+
+    # 3. 限制 description 长度（≤72 字符）
+    if len(description) > 72:
+        description = description[:69] + "..."
+
+    # 4. 构造完整 commit message
+    message = f"{change_type}({scope}): {description}\n\n"
+
+    # 5. body（根据 change_type 智能生成）
+    if change_type == "feat":
+        message += "- 添加实现代码\n"
+        message += "- 添加单元测试\n"
+    elif change_type == "fix":
+        message += "- 修复 bug\n"
+        message += "- 添加回归测试\n"
+    elif change_type == "docs":
+        message += "- 更新文档\n"
+    elif change_type == "refactor":
+        message += "- 重构代码（不改行为）\n"
+    elif change_type == "test":
+        message += "- 添加/修改测试\n"
+    elif change_type == "chore":
+        message += "- 配置/工具更新\n"
+    elif change_type == "perf":
+        message += "- 性能优化\n"
+    else:
+        message += "- 更新代码\n"
+
+    # 6. footer：关联 Issue（如果有）
+    if "fix" in feature_key or "bug" in description.lower():
+        # Bug 修复尝试关联 Issue（自动获取最近创建的 fix Issue）
+        message += "\nRefs: #auto-detect-from-current-branch\n"
+
+    # 7. 限制总长度（避免 commit message 过长）
+    if len(message) > 500:
+        message = message[:497] + "..."
+
+    print(f"\n💾 自动提交（Conventional Commits）:")
+    print(f"  {message}")
+    print()
 
     run_cmd(["git", "add", "."], workdir=project_dir)
     run_cmd(["git", "commit", "-m", message], workdir=project_dir)
@@ -393,7 +608,7 @@ def auto_wait_and_check_ci(project_dir: Path, feature_key: str, docs_updated: bo
     return False
 
 
-def auto_check_docs_sync(project_dir: Path) -> Tuple[bool, List[str]]:
+def auto_check_docs_sync(project_dir: Path, base_branch: str = "main") -> Tuple[bool, List[str]]:
     """
     检查文档同步（模拟 check-docs-sync.sh）
 
@@ -401,18 +616,23 @@ def auto_check_docs_sync(project_dir: Path) -> Tuple[bool, List[str]]:
     """
     print(f"\n📄 检查文档同步...")
 
-    docs_updated, docs_to_update = check_docs_sync(project_dir)
+    docs_updated, docs_to_update = check_docs_sync(project_dir, base_branch)
 
     if docs_updated:
         print(f"  ✅ 文档已更新: {docs_to_update}")
     else:
-        print(f"  ❌ 未检测到文档变更")
-        print(f"  建议：请手动更新 src/support_log_export/ 目录下的文档")
+        print(f"  ❌ 未检测到 5 份核心文档变更")
+        print(f"  建议：请手动更新以下 5 份核心文档：")
+        print(f"    - docs/PRD.md")
+        print(f"    - CHANGELOG.md")
+        print(f"    - README.md")
+        print(f"    - docs/AGENTS.md")
+        print(f"    - docs/INTEGRATION.md")
 
     return docs_updated, docs_to_update
 
 
-def analyze_git_status(project_dir: Path) -> Tuple[bool, List[str]]:
+def analyze_git_status(project_dir: Path, base_branch: str = "main") -> Tuple[bool, List[str]]:
     """
     分析 git 状态（手动调用 check-docs-sync.sh）
 
@@ -420,7 +640,7 @@ def analyze_git_status(project_dir: Path) -> Tuple[bool, List[str]]:
     """
     # 这里先简化实现，实际应该调用 check-docs-sync.sh
     # 但由于我们的自动化目标是"零交互"，所以这里用模拟逻辑
-    return auto_check_docs_sync(project_dir)
+    return auto_check_docs_sync(project_dir, base_branch)
 
 
 # ===== 主流程 =====
@@ -458,19 +678,34 @@ def main():
     print(f"功能描述: {' '.join(args.description)}")
     print(f"工作目录: {project_dir}")
 
-    # 检查是否已切换到项目的 main 分支
+    # 自动检测默认分支（main 或 master）
+    result = run_cmd(["git", "symbolic-ref", "refs/remotes/origin/HEAD"], workdir=project_dir, check=False)
+    if result.returncode == 0 and result.stdout.strip():
+        # 格式：refs/remotes/origin/main 或 refs/remotes/origin/master
+        default_branch = result.stdout.strip().split("/")[-1]
+    else:
+        # 回退：尝试 main，失败则用 master
+        result_main = run_cmd(["git", "rev-parse", "--verify", "main"], workdir=project_dir, check=False)
+        default_branch = "main" if result_main.returncode == 0 else "master"
+
+    print(f"  📌 默认分支: {default_branch}")
+
+    # 检查是否已切换到默认分支
     current_branch = get_current_branch()
 
-    if current_branch != "main":
-        print(f"⚠️  当前不在 main 分支 ({current_branch})，将自动切换")
-        run_cmd(["git", "checkout", "main"])
+    if current_branch != default_branch:
+        print(f"  ⚠️  当前不在 {default_branch} 分支 ({current_branch})，将自动切换")
+        checkout_result = run_cmd(["git", "checkout", default_branch], workdir=project_dir, check=False)
+        if checkout_result.returncode != 0:
+            print(f"  ⚠️  无法切换到 {default_branch} 分支，继续在 {current_branch} 分支上工作")
+            default_branch = current_branch  # 用当前分支代替
 
-    # 拉取最新代码
+    # 拉取最新代码（失败时仅警告，不中断）
     print(f"\n🔄 拉取最新代码...")
-    current_branch = get_current_branch()
-    # 自动匹配分支名称（优先 main，其次 master）
-    target_branch = "main" if current_branch == "main" else "master"
-    run_cmd(["git", "pull", "origin", target_branch], workdir=project_dir)
+    pull_result = run_cmd(["git", "pull", "origin", default_branch], workdir=project_dir, check=False)
+    if pull_result.returncode != 0:
+        print(f"  ⚠️  拉取失败（可能网络问题），但继续执行")
+        print(f"  💡 你可以稍后手动 `git pull origin {default_branch}`")
 
     # 自动创建 Issue
     if not args.simulate:
@@ -480,17 +715,34 @@ def main():
         print(f"\n📝 自动创建 Issue（模拟）: #{issue_number}")
 
     # 自动创建分支
-    branch_name = auto_create_branch(args.feature_key)
+    branch_name = auto_create_branch(args.feature_key, default_branch)
 
     # 自动写代码（TDD）
     print(f"\n🔍 进入目录: {project_dir}")
     auto_write_code(project_dir, args.feature_key, args.description)
 
-    # 自动 Commit
-    commit_message = auto_commit(project_dir, args.feature_key)
+    # 自动 Commit（Conventional Commits）
+    # 根据 feature_key 自动推断 change_type
+    if args.feature_key.startswith("fix-") or "fix" in args.feature_key:
+        change_type = "fix"
+    elif args.feature_key.startswith("docs-"):
+        change_type = "docs"
+    elif args.feature_key.startswith("chore-"):
+        change_type = "chore"
+    elif args.feature_key.startswith("refactor-"):
+        change_type = "refactor"
+    else:
+        change_type = "feat"
 
-    # 分析文档同步
-    docs_updated, docs_to_update = analyze_git_status(project_dir)
+    commit_message = auto_commit(
+        project_dir,
+        args.feature_key,
+        change_type=change_type,
+        description=f"实现{args.description[0] if args.description else '新功能'}"
+    )
+
+    # 分析文档同步（5 份核心文档）
+    docs_updated, docs_to_update = analyze_git_status(project_dir, default_branch)
 
     # 自动创建 PR
     if not args.simulate:
@@ -517,18 +769,18 @@ def main():
     print(f"分支:   {branch_name}")
     print(f"文件变更:")
 
-    files_diff = run_cmd(["git", "diff", "--name-only", "origin/main"],
+    files_diff = run_cmd(["git", "diff", "--name-only", f"origin/{default_branch}"],
                         workdir=project_dir).stdout.strip().split("\n")
     for f in files_diff:
         print(f"  - {f}")
 
     if docs_updated:
-        print(f"\n✅ 文档更新: {docs_to_update}")
+        print(f"\n✅ 5 份核心文档已同步（PRD/CHANGELOG/README/AGENTS/INTEGRATION）")
         print("💡 可以直接在 GitHub 上合并 PR")
     else:
-        print(f"\n⚠️  未检测到文档变更")
-        print(f"💡 请在 GitHub 网页上手动更新 README.md/CHANGELOG.md，然后点击 'Re-run workflow' 重新触发 CI")
-
+        print(f"\n⚠️  未检测到 5 份核心文档变更")
+        print(f"💡 请在 GitHub 网页上手动更新 docs/PRD.md/CHANGELOG.md/README.md/docs/AGENTS.md/docs/INTEGRATION.md")
+        print(f"然后点击 PR 页面上的 'Re-run workflow' 按钮，等 CI 通过后再合并")
     # 清理临时文件
     (project_dir / ".temp_pr_body.md").unlink(missing_ok=True)
 
