@@ -1230,3 +1230,120 @@ python ../team/scripts/auto-bug-fix.py "登录慢" --auto-fix
 | **Level 2** | agent 自动诊断 | ✅ 完成 |
 | **Level 3** | agent 自动写修复代码 | ✅ 完成 |
 | **Level 4** | CI 失败自动分析 + 自动 PR | 🔜 后续 |
+
+---
+
+## 14. 第十四章：Level 4 — CI 失败自动修复 + 防循环
+
+### 14.1 核心架构
+
+```
+任何 CI 失败（check-docs-sync / Lint / Test）
+      ↓
+GitHub Action（ci-failure-handler.yml）
+  1. 解析失败原因
+  2. 检查是否已有 Issue（防重复）
+  3. 创建 Bug Issue（含失败详情 + 修复指南）
+  4. 在 PR 留评论（@ 用户去本地修复）
+      ↓
+你在本地收到通知
+      ↓
+本地方能运行：
+  bash ../team/scripts/trigger-agent-fix.sh
+      ↓
+trigger-agent-fix.sh 自动：
+  1. 检查失败次数（防无限循环）
+  2. 调 auto-bug-fix.py --auto-fix（Level 3 修复）
+  3. 自动 commit + push
+  4. CI 自动重跑（验证修复）
+      ↓
+失败次数 ≥ 3 次
+      ↓
+自动停止 → 创建"需要 CTO 介入"Issue → 转人工
+```
+
+### 14.2 文件清单
+
+| 文件 | 作用 |
+|------|------|
+| `ci-failure-handler.yml` | GitHub Actions 工作流（监听 CI 失败） |
+| `trigger-agent-fix.sh` | 本地包装脚本（含失败次数检查） |
+| `auto-fix-loop-counter.sh` | 失败次数追踪工具（count/reset/bump/check/remaining） |
+| `.agent-fix-counter` | 运行时文件（记录当前失败次数，每项目一个） |
+
+### 14.3 配置
+
+```yaml
+# .github/workflows/ci-failure-handler.yml（已预配置）
+# 监听以下 workflow 的失败
+workflows: ["check-docs-sync", "CI", "Lint", "Test"]
+
+# 触发条件：只有 failure 才触发
+if: ${{ github.event.workflow_run.conclusion == 'failure' }}
+```
+
+### 14.4 使用
+
+**安装（一次配置）**：
+
+1. 复制 `ci-failure-handler.yml` 到项目 `.github/workflows/`：
+```bash
+cp team/scripts/ci-failure-handler.yml PROJECT-011/.github/workflows/
+```
+
+2. 在 GitHub 创建 `level-4` label：
+```bash
+gh label create "level-4" --color "5319e7" --description "Level 4 CI 失败自动检测"
+```
+
+**日常使用**：
+
+CI 失败后，自动创建 Bug Issue。你在本地做：
+
+```bash
+# 1. 切到失败分支
+git fetch origin
+git checkout <失败分支名>
+
+# 2. 运行自动修复
+cd <项目根目录>
+bash ../team/scripts/trigger-agent-fix.sh
+
+# trigger-agent-fix.sh 自动：
+#   - 检查失败次数
+#   - 调 auto-bug-fix.py --auto-fix
+#   - 自动 commit + push
+#   - CI 重跑
+```
+
+### 14.5 防无限循环机制
+
+| 失败次数 | 动作 |
+|----------|------|
+| 1-3 | 自动修复 + commit + push |
+| ≥ 3 | 停止修复 → 创建"需要 CTO 介入"Issue |
+| 4+ | 永久停止该分支的自动修复 |
+
+**重置计数器**：
+```bash
+bash ../team/scripts/auto-fix-loop-counter.sh reset
+```
+
+### 14.6 完整级别路线
+
+| 级别 | 描述 | 状态 |
+|------|------|------|
+| **Level 1** | 传统模式（一句话 + 完整流程） | ✅ 完成 |
+| **Level 2** | agent 自动诊断 | ✅ 完成 |
+| **Level 3** | agent 自动写修复代码 | ✅ 完成 |
+| **Level 4** | CI 失败自动创建 Issue + 防循环自动修复 | ✅ 完成 |
+
+### 14.7 4 个 Level 使用选择
+
+| 场景 | 命令 |
+|------|------|
+| 明确知道 bug | `python auto-bug-fix.py "console.log 残留"` |
+| 不确定根因 | `python auto-bug-fix.py "登录慢" --auto-diagnose` |
+| 想自动修 | `python auto-bug-fix.py "登录慢" --auto-fix` |
+| CI 失败 | ✅ 自动触发（CI 创建 Issue → 本地 `trigger-agent-fix.sh`） |
+| 紧急 hotfix | `python auto-bug-fix.py "紧急" --scope hotfix` |
