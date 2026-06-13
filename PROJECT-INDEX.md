@@ -24,6 +24,23 @@
 - 工具栈：GitHub Projects + Issues + gh CLI
 - 文档门禁：硬门禁 + AI 自动起草 CHANGELOG
 
+### 🚀 对话触发（3 个 Hermes Skill）
+
+| Skill | 版本 | 触发词 |
+|-------|------|--------|
+| **feature-workflow** | v2.0.0 ✅ 集成 professional-ai-coding-workflow | "做导出CSV功能" |
+| **bug-fix-workflow** | v1.0.0 | "修个bug: console.log残留" |
+| **ci-doc-fix** | v1.0.0 | "CI红了" |
+
+### 🎯 自动化级别（Level 1-4）
+
+| 级别 | 说明 | 脚本文件 |
+|------|------|---------|
+| Level 1 | 传统模式（一句话触发完整流程） | `agent-feature.py` / `auto-bug-fix.py` |
+| Level 2 | agent 自动诊断（不需 LLM API） | `auto-bug-fix.py --auto-diagnose` |
+| Level 3 | agent 自动写修复代码（不需 LLM API） | `auto-bug-fix.py --auto-fix` |
+| Level 4 | CI 失败自动检测 + 防循环修复 | `ci-failure-handler.yml` + `trigger-agent-fix.sh` |
+
 详细决策：[RFC-001](./RFC/RFC-001-team-workflow.md) | [PRD](./tasks/PROJECT-009-team-workflow.md) | [架构](./tasks/ARCH-F1-team-workflow.md)
 
 ---
@@ -67,4 +84,4 @@ team/tasks/
 
 ---
 
-*最后更新：2026-06-13 by CEO + COO（新增团队协作机制 v1.0.0）*
+*最后更新：2026-06-13 by CEO + COO（完整机制 Level 1-4 + 3 个 Skill + 集成 professional-ai-coding-workflow）*

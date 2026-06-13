@@ -329,7 +329,7 @@
 
 | 日期 | 变更 |
 |------|------|
-| 2026-06-13 | **团队协作机制 v1.0.0 正式生效**：[PROTOCOL.md](./PROTOCOL.md) 发布<br>• 4 层机制（L1 决策/L2 评审/L3 执行/L4 监督）<br>• 3 粒度追踪（Epic/Feature/Task）<br>• 5 个核心脚本（看板/Issue/门禁/草稿/导出）<br>• 5 个模板（RFC/Epic/Feature/Task/PR）<br>• 文档同步硬门禁 + AI 自动起草 CHANGELOG<br>• 决策记录：[RFC-001](./RFC/RFC-001-team-workflow.md) |
+| 2026-06-13 | **Agent-Team-WorkFlow 完整机制 — Level 1-4 全部就绪**：<br>• **Level 1**：`agent-feature.py`（极强自动化工单脚本）<br>• **Level 1**：`auto-bug-fix.py`（Bug 修复极简入口）<br>• **P0 整合**：5 维 PR body checkbox + Conventional Commits + Issue 模板<br>• **Level 2**：`--auto-diagnose`（agent 自动诊断，不需 LLM API）<br>• **Level 3**：`--auto-fix`（agent 自动写修复代码，不需 LLM API）<br>• **Level 4**：CI 失败自动检测 + 防循环修复（3 个新文件）<br>• **3 个 Skill**：`feature-workflow` v2.0.0 / `bug-fix-workflow` / `ci-doc-fix`<br>• **仓库名修正**：qclaw-team-workflow → Agent-Team-WorkFlow<br>• **GitHub 地址**：https://github.com/Colinchiu007/Agent-Team-WorkFlow<br>• **PROJECT-011 集成**：doc-gate.yml + bypass-doc-gate label + GitHub Project #2<br>• **合并 professional-ai-coding-workflow** 到 feature-workflow v2.0.0
 | 2026-06-07 | **PROJECT-003 技术路线变更**：Web SaaS → Electron + Playwright 桌面客户端<br>• 新增 `003-electron-tech-design.md`（技术设计方案）<br>• 更新 PROJECT-REGISTRY.md（技术栈、核心功能、下一步行动） |
 | 2026-06-07 | **PROJECT-001 文档完善**：新增 API 文档（v1.0.0）<br>• `API/API-v1.0.0-2026-06-07.md`（14KB，覆盖所有 40+ API 端点） |
 | 2026-06-07 | **跨会话协作机制建立**：PRD INBOX + process_inbox.py<br>• 所有 Agent 可向 `PRD/INBOX.md` 追加需求<br>• CEO 通过 Heartbeat 每 4 小时检查合并 |
