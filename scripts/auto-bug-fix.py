@@ -98,6 +98,63 @@ def wait_for_diagnosis(project_dir: Path, timeout: int = 300) -> Optional[dict]:
     return None
 
 
+def apply_fix_from_result(project_dir: Path, fix_result: dict) -> bool:
+    """
+    应用 agent 的修复（Level 3 核心函数）
+
+    Args:
+        project_dir: 项目目录
+        fix_result: agent 返回的 .bug-fix-result.json 内容
+
+    Returns:
+        True 成功，False 失败
+    """
+    import subprocess
+
+    files_changed = fix_result.get("files_changed", [])
+    if not files_changed:
+        print("  ⚠️  agent 未提供 files_changed，跳过应用")
+        return False
+
+    print(f"\n🛠️  应用 agent 修复（{len(files_changed)} 个文件）...")
+
+    for change in files_changed:
+        file_path = project_dir / change["path"]
+        action = change.get("action", "modify")
+
+        try:
+            if action == "create" or action == "modify":
+                # 创建或修改文件
+                file_path.parent.mkdir(parents=True, exist_ok=True)
+
+                if "content" in change:
+                    # 直接写完整内容
+                    file_path.write_text(change["content"], encoding='utf-8')
+                elif "diff" in change:
+                    # 应用 diff（简化：用 patch 工具）
+                    print(f"  ⚠️  diff 模式暂未完整实现，建议使用 content 模式")
+                    print(f"  📝 {change['path']}: 需要手写 diff 修复")
+                    continue
+                else:
+                    print(f"  ⚠️  {change['path']}: 既无 content 也无 diff，跳过")
+                    continue
+
+                print(f"  ✅ {action}: {change['path']}")
+
+            elif action == "delete":
+                if file_path.exists():
+                    file_path.unlink()
+                    print(f"  🗑️  delete: {change['path']}")
+                else:
+                    print(f"  ⚠️  {change['path']} 不存在，跳过删除")
+
+        except Exception as e:
+            print(f"  ❌ {change['path']} 应用失败: {e}")
+            return False
+
+    return True
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Auto Bug Fix — 极简 Bug 修复入口（基于 agent-feature.py）",
@@ -110,7 +167,9 @@ def main():
     parser.add_argument("--simulate", action="store_true", help="模拟运行（不实际创建 Issue/PR）")
     parser.add_argument("--workdir", help="工作目录（绝对路径）")
     parser.add_argument("--auto-diagnose", action="store_true", help="Level 2 模式：调用 agent 诊断 bug")
+    parser.add_argument("--auto-fix", action="store_true", help="Level 3 模式：agent 自动诊断 + 写修复代码")
     parser.add_argument("--diagnosis-timeout", type=int, default=300, help="诊断超时（秒，默认 300）")
+    parser.add_argument("--apply-fix", action="store_true", help="应用 agent 的修复（Level 3 配套用，agent-feature.py 跳过示例代码生成）")
 
     args = parser.parse_args()
 
@@ -169,9 +228,10 @@ def main():
         print(f"❌ 错误：agent-feature.py 不存在 ({AGENT_FEATURE_SCRIPT})")
         sys.exit(1)
 
-    # ============ Level 2 模式：先做诊断，再走流程 ============
-    if args.auto_diagnose:
-        print("🔍 Level 2 模式：准备 agent 诊断上下文...")
+    # ============ Level 2/3 模式：先做诊断（+修复），再走流程 ============
+    if args.auto_diagnose or args.auto_fix:
+        level = "Level 3 (agent 诊断 + 写修复代码)" if args.auto_fix else "Level 2 (agent 诊断)"
+        print(f"🔍 {level}：准备 agent 诊断上下文...")
         print()
 
         # 1. 写入诊断请求文件
@@ -183,13 +243,15 @@ def main():
             "project_dir": str(workdir),
             "git_branch_to_create": f"{feature_key}/v1",
             "simulate": args.simulate,
+            "level": "Level 3 (auto-fix)" if args.auto_fix else "Level 2 (auto-diagnose)",
+            "require_files_changed": args.auto_fix,  # Level 3 必需
         }
 
         diagnosis_file = write_diagnosis_request(workdir, bug_info)
         print(f"  ✅ 诊断请求已写入: {diagnosis_file.relative_to(workdir)}")
         print()
         print("=" * 70)
-        print("🛑 等待 agent 诊断")
+        print(f"🛑 等待 agent {'诊断 + 修复' if args.auto_fix else '诊断'}")
         print("=" * 70)
         print()
         print("请按以下步骤让 agent（我）诊断：")
@@ -201,6 +263,9 @@ def main():
         print("     - 读项目代码（git log / src/）")
         print("     - 推断可能的根因（基于 bug 描述）")
         print("     - 给出修复建议 + 测试方案")
+        if args.auto_fix:
+            print("     - 实际修改文件（在 result 里写 files_changed）")
+            print("     - 加测试文件（在 result 里写 tests_added）")
         print()
         print("  3. agent 应写入结果到：")
         print(f"     {workdir / DIAGNOSIS_RESULT_FILE}")
@@ -211,11 +276,14 @@ def main():
         print("     - fix_suggestion: 修复建议（具体到文件+行号）")
         print("     - test_suggestion: 测试方案")
         print("     - confidence: 0-1")
+        if args.auto_fix:
+            print("     - files_changed: 列表（含 path/action/content）")
+            print("     - tests_added: 列表（含测试文件路径）")
         print()
         print("  5. 脚本会等待结果文件出现（最多 {} 秒）".format(args.diagnosis_timeout))
         print()
         print("  💡 提示：在你的 Hermes 会话里，直接说")
-        print("       '请读 .bug-diagnosis-needed.json 诊断 bug'")
+        print("       '请读 .bug-diagnosis-needed.json 诊断{}bug'".format(" + 修复" if args.auto_fix else ""))
         print("     即可触发 agent 诊断")
         print()
 
@@ -232,9 +300,32 @@ def main():
             print(f"  置信度: {diagnosis.get('confidence', 0):.1%}")
             print()
 
-            # 把诊断信息加入 description（给 PR body 用）
+            # Level 3: 应用修复
+            if args.auto_fix:
+                files_changed = diagnosis.get("files_changed", [])
+                if files_changed:
+                    print(f"🛠️  Level 3: 应用 agent 修复（{len(files_changed)} 个文件）...")
+                    apply_success = apply_fix_from_result(workdir, diagnosis)
+                    if apply_success:
+                        print("  ✅ 修复应用成功")
+                        # 把诊断信息加入 description
+                        description.append("---")
+                        description.append(f"**Agent 修复（Level 3）**：")
+                        description.append(f"- 根因：{diagnosis.get('root_cause', 'N/A')}")
+                        description.append(f"- 置信度：{diagnosis.get('confidence', 0):.1%}")
+                        description.append(f"- 修改文件：{len(files_changed)} 个")
+                        description.append(f"- 添加测试：{', '.join(diagnosis.get('tests_added', []))}")
+                    else:
+                        print("  ❌ 修复应用失败，退出")
+                        sys.exit(1)
+                else:
+                    print("  ⚠️  agent 未提供 files_changed，但您指定了 --auto-fix")
+                    print("  💡 请在 result 中添加 files_changed 字段")
+                    sys.exit(1)
+
+            # 把诊断信息加入 description
             description.append("---")
-            description.append("**Agent 诊断（Level 2）**：")
+            description.append("**Agent 诊断：")
             description.append(f"- 根因：{diagnosis.get('root_cause', 'N/A')}")
             description.append(f"- 修复：{diagnosis.get('fix_suggestion', 'N/A')}")
             description.append(f"- 测试：{diagnosis.get('test_suggestion', 'N/A')}")
