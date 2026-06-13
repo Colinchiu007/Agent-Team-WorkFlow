@@ -28,8 +28,17 @@ import json
 
 # ===== 配置 =====
 
-TEAM_SCRIPTS_DIR = Path(__file__).parent.parent / "scripts"
-PROJECT_REGENGERY_FILES = ["README.md", "CHANGELOG.md", "docs/", "PROTOCOL.md", "RFC/"]
+TEAM_SCRIPTS_DIR = Path(__file__).parent.parent
+
+# 核心文档检查清单（5 份：与 professional-ai-coding-workflow 对齐）
+CORE_DOCUMENTS = [
+    "docs/PRD.md",              # 产品需求文档
+    "CHANGELOG.md",             # 版本更新日志
+    "README.md",                # 项目总览
+    "docs/AGENTS.md",           # AI 角色注入
+    "docs/INTEGRATION.md"       # API 端点清单
+]
+
 DEFAULT_BRANCH = "main"
 
 
