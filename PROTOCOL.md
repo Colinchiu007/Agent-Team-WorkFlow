@@ -857,3 +857,67 @@ gh workflow enable doc-gate.yml
 ---
 
 *文档结束。如有疑问，参考 §10 FAQ 或发起新 RFC。*
+---
+
+## 10. 第十章：命令行自动化工单
+
+### 10.1 agent-feature.py 脚本（极强自动化）
+
+**核心脚本**：team/scripts/agent-feature.py
+
+**用法**（在项目根目录运行）：
+
+```bash
+# 基础命令
+python ../../team/scripts/agent-feature.py "导出 CSV" --description "导出支持日志为 CSV 格式"
+
+# 指定工作目录
+python ../../team/scripts/agent-feature.py "导出 CSV" --description "导出支持日志为 CSV 格式" --workdir /c/Users/邱领/Projects/prompt-engine
+
+# 模拟运行（不创建真实 Issue/PR）
+python ../../team/scripts/agent-feature.py "导出 CSV" --description "导出支持日志为 CSV 格式" --simulate --workdir /c/Users/邱领/Projects/prompt-engine
+```
+
+**自动化工单流程（零交互）**：
+1. 自动创建 Issue（标题、body、label 全自动）
+2. 自动切分支（feat/<your-key>/v1）
+3. 自动生成示例代码 + 测试文件（TDD）
+4. 自动 Commit（Conventional Commits）
+5. 自动生成 PR body（含自动勾选的 markdown checkbox）
+6. 自动调用 gh pr create（无需手动创建 PR）
+7. 自动检查文档同步（调用 check-docs-sync.sh）
+8. 文档未更新 → 在 GitHub 网页上手动补 CHANGELOG + 点击 "Re-run workflow"
+
+**示例输出**（模拟运行 --simulate）：
+```
+======================================================================
+🤖 Agent Feature Workflow — 极强自动化工单脚本
+======================================================================
+功能关键帧: export-supported-log-csv
+功能描述: 导出支持日志为 CSV 格式
+工作目录: C:\Users\邱领\Projects\prompt-engine
+
+📝 自动创建 Issue（模拟）: #9998
+🌿 自动创建分支: export-supported-log-csv/v1
+
+🔍 进入目录: C:\Users\邱领\Projects\prompt-engine
+💻 自动写代码: export-supported-log-csv
+  ✅ 示例代码已生成: examples/export_supported_log_csv.py
+  ✅ 测试文件已生成: tests/test_export_supported_log_csv.py
+
+💾 自动提交: feat(export-supported-log-csv): 实现导出 CSV 功能
+  ✅ Commit 已提交
+
+📄 检查文档同步...
+  ⚠️  未检测到文档变更
+  建议：请手动更新 src/support_log_export/ 目录下的文档
+
+🔗 自动创建 PR（模拟）: https://github.com/Colinchiu007/prompt-engine/pull/9999
+分支:   export-supported-log-csv/v1
+
+💡 请在 GitHub 网页上手动更新 README.md/CHANGELOG.md，然后点击 'Re-run workflow' 重新触发 CI
+```
+
+**注意**：
+- 真实场景中，"写代码" 这一步需要你实际的 coding skill（不是示例代码）
+- 当前示例代码只是展示文件结构，你可以替换成你的真实实现
