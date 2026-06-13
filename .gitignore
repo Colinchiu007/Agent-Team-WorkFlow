@@ -1,0 +1,40 @@
+# 早期交接文档（已存档，无需 git 追踪）
+HANDOVER-*.md
+handoff-*.md
+
+# 早期 GitHub 协助文档
+github-repo-creation-*.md
+github-url-correction-*.md
+
+# 项目交付物（在各项目仓库，不在本仓库）
+deliverables/
+projects/
+shared/
+shared_modules/
+evaluation/
+reports/
+
+# 团队记忆（私人）
+memory/
+
+# Python 缓存
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# Node
+node_modules/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 临时文件
+*.tmp
+*.bak
+*.swp
