@@ -1001,3 +1001,119 @@ description: console.log 残留 / 自动记录于 C:\Users\邱领\Projects\team\
 | 配置/工具变更 | `agent-feature.py` + scope=chore |
 | 文档更新 | `agent-feature.py` + scope=docs |
 
+
+---
+
+## 12. 第十二章：Level 2 — Agent 自动诊断（不需 LLM API）
+
+### 12.1 核心原理
+
+在 Hermes Desktop 内运行 `auto-bug-fix.py --auto-diagnose`：
+
+1. **不调用外部 LLM**（如 OpenAI/Claude）
+2. **agent（当前会话的我）就是 LLM**——脚本写入诊断请求文件，agent 读文件后给诊断
+3. **零额外成本** + **零网络依赖**
+
+### 12.2 工作流
+
+```
+你说"修个 bug: console.log 残留"
+      ↓
+运行 auto-bug-fix.py --auto-diagnose
+      ↓
+脚本自动：
+  1. 写入 .bug-diagnosis-needed.json（包含 bug 描述、scope、feature_key）
+  2. 输出"等待 agent 诊断"提示
+  3. 轮询 .bug-diagnosis-result.json
+      ↓
+你在当前会话里说"请读 .bug-diagnosis-needed.json 诊断"
+      ↓
+agent（我）做：
+  1. 读请求文件
+  2. 读项目代码（git log、src/、tests/）
+  3. 推断根因 + 给出修复建议 + 测试方案
+  4. 写入 .bug-diagnosis-result.json
+      ↓
+脚本继续：
+  5. 读到诊断结果
+  6. 把诊断信息附加到 PR body
+  7. 调 agent-feature.py 走完整流程
+  8. 自动清理诊断文件
+```
+
+### 12.3 诊断结果文件格式
+
+**请求文件** `.bug-diagnosis-needed.json`：
+```json
+{
+  "bug_title": "console.log 残留",
+  "feature_key": "fix-console-log-residue",
+  "scope": "core",
+  "description": ["..."],
+  "project_dir": "C:\Users\邱领\Projects\prompt-engine",
+  "git_branch_to_create": "fix-console-log-residue/v1",
+  "diagnosis_requested_at": "2026-06-13 19:30:00",
+  "status": "pending"
+}
+```
+
+**结果文件** `.bug-diagnosis-result.json`（agent 写入）：
+```json
+{
+  "status": "completed",
+  "root_cause": "login.js:42 直接读取 localStorage.token，但未做 null 检查...",
+  "fix_suggestion": "在 login.js:42 加 null 检查...",
+  "test_suggestion": "在 tests/test_login.js 加测试...",
+  "confidence": 0.85,
+  "diagnosed_at": "2026-06-13 19:32:00",
+  "files_inspected": ["src/auth/login.js", "src/auth/session.js"]
+}
+```
+
+### 12.4 完整使用流程
+
+```bash
+# 步骤 1：启动 Level 2 模式（带诊断）
+cd /c/Users/邱领/Projects/prompt-engine
+python ../team/scripts/auto-bug-fix.py "console.log 残留" --auto-diagnose
+
+# 输出：
+#   ✅ 诊断请求已写入: .bug-diagnosis-needed.json
+#   🛑 等待 agent 诊断
+#   ⏳ 等待 agent 完成诊断（最多 300 秒）...
+
+# 步骤 2：在 Hermes 会话里说
+#   "请读 .bug-diagnosis-needed.json 诊断 bug"
+
+# agent（我）会：
+#   - 读请求文件
+#   - 分析项目
+#   - 写入诊断结果到 .bug-diagnosis-result.json
+
+# 步骤 3：脚本自动检测到结果，继续走完整流程
+#   📋 诊断结果：
+#     根因: ...
+#     修复: ...
+#     置信度: 85.0%
+#
+#   🚀 调用 agent-feature.py 走完整流程
+```
+
+### 12.5 何时用 Level 2 vs 传统模式
+
+| 场景 | 模式 | 命令 |
+|------|------|------|
+| **明确知道 bug 在哪**（如 console.log 残留） | 传统 | `python auto-bug-fix.py "console.log 残留"` |
+| **不确定根因**（如"用户反馈登录慢"） | Level 2 | `python auto-bug-fix.py "登录慢" --auto-diagnose` |
+| **CI 失败**，但报错信息不清晰 | Level 2 | `python auto-bug-fix.py "CI 失败" --auto-diagnose` |
+| **紧急 hotfix** | 传统 | `python auto-bug-fix.py "紧急" --scope hotfix` |
+
+### 12.6 后续可扩展（Level 3 / 4）
+
+| 级别 | 描述 | 当前状态 |
+|------|------|---------|
+| **Level 1** | 传统模式（一句命令触发完整流程） | ✅ 完成 |
+| **Level 2** | agent 自动诊断（不需 LLM API） | ✅ 完成 |
+| **Level 3** | agent 自动写修复代码（不需 LLM API） | 🔜 后续 |
+| **Level 4** | CI 失败自动分析 + 自动 PR | 🔜 后续 |
+
