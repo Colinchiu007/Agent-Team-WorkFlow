@@ -1117,3 +1117,116 @@ python ../team/scripts/auto-bug-fix.py "console.log 残留" --auto-diagnose
 | **Level 3** | agent 自动写修复代码（不需 LLM API） | 🔜 后续 |
 | **Level 4** | CI 失败自动分析 + 自动 PR | 🔜 后续 |
 
+
+---
+
+## 13. 第十三章：Level 3 — Agent 自动写修复代码（不需 LLM API）
+
+### 13.1 Level 3 vs Level 2
+
+| 维度 | Level 2（diagnose） | Level 3（fix） |
+|------|---------------------|-----------------|
+| **agent 做什么** | 只诊断 | 诊断 + 实际写代码 |
+| **result 文件** | 含 root_cause/fix_suggestion | **多含 files_changed + tests_added** |
+| **脚本行为** | 显示诊断（不修改文件） | **自动应用修复**到文件 |
+| **你做的事** | 写代码 | review 代码 + approve |
+| **风险** | 低（不改文件） | 中（可能改坏） |
+
+### 13.2 工作流
+
+```
+你说"修个 bug: 登录慢" --auto-fix
+      ↓
+auto-bug-fix.py 调 agent-feature.py
+      ↓
+【Level 3 暂停点】脚本写入 .bug-diagnosis-needed.json
+  包含：bug 描述 + 项目路径 + 分支名 + require_files_changed=true
+      ↓
+你在当前会话说"请诊断 + 写修复代码"
+      ↓
+agent（我）做：
+  1. 读 .bug-diagnosis-needed.json
+  2. 读项目代码（git log / git status / 涉及文件）
+  3. 推断根因
+  4. **实际修改文件**（写入 src/.../xxx.js）
+  5. **写测试代码**（写入 tests/...）
+  6. 写 .bug-diagnosis-result.json（含 files_changed + tests_added）
+      ↓
+auto-bug-fix.py 继续：
+  7. 读 .bug-diagnosis-result.json
+  8. 应用 files_changed 到磁盘（create/modify/delete）
+  9. 调 agent-feature.py 走完整流程（commit + PR + CI 门禁）
+  10. 清理临时文件
+      ↓
+你 review PR → approve/拒绝
+```
+
+### 13.3 result 文件格式（Level 3 扩展）
+
+```json
+{
+  "status": "completed",
+  "root_cause": "login.js:42 缺少 null 检查",
+  "fix_suggestion": "加 if (!token) 守卫",
+  "test_suggestion": "加 missing token 测试",
+  "confidence": 0.85,
+  "files_changed": [
+    {
+      "path": "src/auth/login.js",
+      "action": "modify",  // modify / create / delete
+      "content": "完整文件内容..."
+    },
+    {
+      "path": "tests/test_login.js",
+      "action": "create",
+      "content": "完整测试文件..."
+    }
+  ],
+  "tests_added": ["tests/test_login.js"],
+  "files_inspected": ["src/auth/login.js", "package.json"]
+}
+```
+
+### 13.4 使用
+
+```bash
+# Level 3 模式
+python ../team/scripts/auto-bug-fix.py "登录慢" --auto-fix
+
+# 输出：
+#   🔍 Level 3 (agent 诊断 + 写修复代码)：准备 agent 诊断上下文...
+#   ✅ 诊断请求已写入: .bug-diagnosis-needed.json
+#   🛑 等待 agent 诊断 + 修复
+#   ⏳ 等待 agent 完成诊断（最多 300 秒）...
+#
+#   提示：在你的 Hermes 会话说
+#     '请读 .bug-diagnosis-needed.json 诊断 + 修复bug'
+
+# agent 完成诊断 + 修复后：
+#   📋 诊断结果：...
+#   🛠️  Level 3: 应用 agent 修复（2 个文件）...
+#     ✅ modify: src/auth/login.js
+#     ✅ create: tests/test_login.js
+#     ✅ 修复应用成功
+#
+#   🚀 调用 agent-feature.py 走完整流程
+```
+
+### 13.5 何时用 Level 1/2/3
+
+| 场景 | 模式 | 命令 |
+|------|------|------|
+| **明确知道 bug** | Level 1（传统） | `python auto-bug-fix.py "console.log 残留"` |
+| **不确定根因** | Level 2 | `python auto-bug-fix.py "登录慢" --auto-diagnose` |
+| **明确根因，想自动修** | **Level 3** | **`python auto-bug-fix.py "登录慢" --auto-fix`** |
+| **CI 失败** | Level 2 | `python auto-bug-fix.py "CI 失败" --auto-diagnose` |
+| **紧急 hotfix** | Level 1 | `python auto-bug-fix.py "紧急" --scope hotfix` |
+
+### 13.6 完整级别路线
+
+| 级别 | 描述 | 状态 |
+|------|------|------|
+| **Level 1** | 传统模式（一句话 + 完整流程） | ✅ 完成 |
+| **Level 2** | agent 自动诊断 | ✅ 完成 |
+| **Level 3** | agent 自动写修复代码 | ✅ 完成 |
+| **Level 4** | CI 失败自动分析 + 自动 PR | 🔜 后续 |
